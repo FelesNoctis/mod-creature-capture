@@ -28,6 +28,7 @@
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "TemporarySummon.h"
+#include "ThreatManager.h"
 #include "Unit.h"
 #include "WorldPacket.h"
 #include "DBCStores.h"
@@ -1125,14 +1126,14 @@ private:
         if (!target || !target->IsCreature())
             return false;
 
-        auto const& threatList = target->ToCreature()->GetThreatMgr().GetThreatList();
-        if (threatList.empty())
-            return false;
+        for (ThreatReference const* ref : target->ToCreature()->GetThreatMgr().GetSortedThreatList())
+        {
+            if (ref && ref->GetVictim() && ref->GetVictim() != me && ref->GetThreat() > 0.0f)
+                return true;
+            break; // Only check the top threat holder
+        }
 
-        // Top threat holder has established aggro — healer is safe to assist
-        HostileReference* topRef = threatList.front();
-        return topRef && topRef->getTarget() && topRef->getTarget() != me &&
-               topRef->GetThreat() > 0.0f;
+        return false;
     }
 
     // Check if a spell has zero power cost
@@ -1493,9 +1494,9 @@ private:
             // For every enemy on our threat list, check if it's attacking an ally
             // and inject threat to pull it off them
             Unit* tauntTarget = nullptr;
-            for (auto const& ref : me->GetThreatMgr().GetThreatList())
+            for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
             {
-                Unit* enemy = ref->getTarget();
+                Unit* enemy = ref->GetVictim();
                 if (!enemy)
                     continue;
 
@@ -1523,8 +1524,10 @@ private:
             if (tauntTarget && !_hasTauntSpell && _tauntTimer <= 0 &&
                 tauntTarget->IsCreature() && tauntTarget->CanHaveThreatList())
             {
-                tauntTarget->TauntApply(me);
-                me->AddThreat(tauntTarget, 500.0f);
+                tauntTarget->GetThreatMgr().MatchUnitThreatToHighestThreat(me);
+                tauntTarget->GetThreatMgr().AddThreat(me, 500.0f);
+                if (CreatureAI* enemyAI = tauntTarget->ToCreature()->AI())
+                    enemyAI->AttackStart(me);
                 _tauntTimer = 8000;
 
                 // Switch to attacking the taunted target
@@ -2168,9 +2171,9 @@ private:
             return false;
         };
 
-        for (auto const& ref : me->GetThreatMgr().GetThreatList())
+        for (ThreatReference const* ref : me->GetThreatMgr().GetUnsortedThreatList())
         {
-            Unit* enemy = ref->getTarget();
+            Unit* enemy = ref->GetVictim();
             if (!enemy || !enemy->IsAlive())
                 continue;
             if (maxRange > 0.0f && !me->IsWithinDist(enemy, maxRange))
