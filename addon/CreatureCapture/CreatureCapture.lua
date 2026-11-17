@@ -1181,12 +1181,16 @@ function RefreshGuardianFrames()
                 f.highlight:Hide()
             end
 
-            f:Show()
+            if not InCombatLockdown() then
+                f:Show()
+            end
         else
             f.highlight:Hide()
             f.portraitSet = false
             f.portrait:Hide()
-            f:Hide()
+            if not InCombatLockdown() then
+                f:Hide()
+            end
         end
     end
 end
@@ -1199,6 +1203,7 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, ...)
     if event == "CHAT_MSG_ADDON" and arg1 == "CCAPTURE" then
@@ -1229,6 +1234,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, ...)
 
     elseif event == "PLAYER_TARGET_CHANGED" then
         OnTargetChanged()
+
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        for i = 0, MAX_SLOTS - 1 do
+            local g = guardians[i]
+            local f = guardianFrames[i]
+            if f and g.creatureGuid then
+                local name = g.guardianName ~= "" and g.guardianName or "Guardian"
+                f:SetAttribute("macrotext", "/targetexact " .. name)
+            end
+        end
+        RefreshGuardianFrames()
 
     elseif event == "PLAYER_LOGIN" then
         RestorePosition(spellbook, "spellbook")
